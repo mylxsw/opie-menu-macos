@@ -1,10 +1,12 @@
 # OpieMenu
 
-可单独复制的 macOS Swift Package。它只负责径向菜单的外观、窗口、快捷键和交互；每个按钮做什么，由接入它的应用决定。最低支持 macOS 14；Liquid Glass 样式需要 macOS 26，较早系统会自动使用毛玻璃样式。
+**English** | [简体中文](README.zh-CN.md) · [Project home](../../README.md)
 
-## 接入
+A standalone macOS Swift Package for the radial menu's appearance, floating window, optional global hotkey, and interaction. Your app provides the menu items and decides what each action does. It supports macOS 14 or later. Liquid Glass requires macOS 26 and falls back to Frosted on earlier versions.
 
-把整个 `Packages/OpieMenu` 文件夹复制到你的项目中，然后在主项目的 `Package.swift` 中加入：
+## Add the package
+
+Add the repository URL `https://github.com/mylxsw/opie-menu-macos.git` in Xcode and select the `OpieMenu` library product. Alternatively, copy the entire `Packages/OpieMenu` directory into your project and add it as a local package:
 
 ```swift
 dependencies: [.package(path: "Packages/OpieMenu")],
@@ -16,11 +18,11 @@ targets: [
 ]
 ```
 
-Xcode 工程也可以用 **File → Add Package Dependencies… → Add Local…** 选择该文件夹，并将 `OpieMenu` 产品添加到应用 target。
+In an Xcode project, choose **File → Add Package Dependencies… → Add Local…** and select the copied directory.
 
-## 最小用法
+## Minimal example
 
-在主线程创建并**持有**菜单实例。`onSelect` 会在收起动画完成后调用，适合打开新窗口或执行应用命令。
+Create and retain the menu on the main actor. `onSelect` runs after the closing animation, so it is suitable for opening a window or running an app command.
 
 ```swift
 import AppKit
@@ -54,27 +56,30 @@ final class MenuOwner {
 }
 ```
 
-`show(at:)` 接受全局屏幕坐标；省略参数时使用当前鼠标位置。默认快捷键示例为 Control + Option + Space。也可以不注册全局快捷键，直接从应用按钮调用 `show()` 或 `toggle()`。
+`show(at:)` accepts a global screen coordinate and uses the current pointer location when omitted. The example shortcut is Control + Option + Space. If your app already handles shortcuts, call `show()` or `toggle()` directly instead.
 
-## 对外接口
+## Public API
 
-| 接口 | 用途 |
+| API | Purpose |
 | --- | --- |
-| `init(items:centerTitle:style:onSelect:)` | 创建菜单，按钮通过稳定且唯一的 `id` 区分；建议放 3–8 个按钮。 |
-| `prepare()` | 提前缓存图标和文字，减少首次打开的等待。 |
-| `show(at:)`、`toggle(at:)`、`dismiss(completion:)` | 在鼠标位置或指定屏幕点显示、切换、关闭。 |
-| `updateItems(_:)`、`setCenterTitle(_:)`、`setStyle(_:)` | 更新按钮、中心标题或风格；显示时也可调用。 |
-| `installGlobalHotKey(keyCode:modifiers:)`、`removeGlobalHotKey()` | 可选的全局快捷键；注册函数返回是否成功。 |
-| `activatePointedItem()` | 应用自行处理按键松开时，可执行当前鼠标指向的扇区。 |
-| `moveSelection(_:)`、`select(index:)`、`activateSelection()` | 应用自行处理键盘时使用。菜单显示期间已经内置方向键、回车、数字键和 Escape。 |
-| `isVisible`、`lastPresentationCenter` | 查询窗口状态和最近一次菜单中心的屏幕坐标。 |
-| `onWillShow`、`onDismiss`、`onSelect` | 显示前、关闭后、选中后的回调。 |
+| `init(items:centerTitle:style:onSelect:)` | Create a menu with unique, stable item IDs; 3–8 items work best. |
+| `prepare()` | Cache icons and text ahead of the first opening. |
+| `show(at:)`, `toggle(at:)`, `dismiss(completion:)` | Show at the pointer or a screen point, toggle, or dismiss. |
+| `updateItems(_:)`, `setCenterTitle(_:)`, `setStyle(_:)` | Update items, center title, or appearance, even while visible. |
+| `installGlobalHotKey(keyCode:modifiers:)`, `removeGlobalHotKey()` | Optionally register a global shortcut; registration returns whether it succeeded. |
+| `activatePointedItem()` | Activate the slice under the pointer when your app handles key release itself. |
+| `moveSelection(_:)`, `select(index:)`, `activateSelection()` | Control keyboard selection yourself. While open, the menu already handles arrows, Return, number keys, and Escape. |
+| `isVisible`, `lastPresentationCenter` | Inspect visibility and the last menu center in screen coordinates. |
+| `onWillShow`, `onDismiss`, `onSelect` | Receive presentation and selection callbacks. |
 
-`OpieMenuIcon` 支持 `.systemSymbol("...")`、`.image(NSImage)` 和 `.smile`。三种 `OpieMenuStyle` 为 `.classic`、`.frosted`、`.liquidGlass`。Package 不会读取或写入宿主应用的偏好设置，也不会执行系统动作。
+`OpieMenuIcon` supports `.systemSymbol("...")`, `.image(NSImage)`, and `.smile`. The `OpieMenuStyle` cases are `.classic`, `.frosted`, and `.liquidGlass`. The package does not read or write the host app's preferences or run system actions.
 
-## 验证
+## Verify
+
+From the repository root:
 
 ```sh
-cd Packages/OpieMenu
 swift test
 ```
+
+The copied local package can also be tested from `Packages/OpieMenu` with `swift test`.
