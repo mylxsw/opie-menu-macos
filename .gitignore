@@ -1,0 +1,5 @@
+.build/
+build/
+.reference/
+.DS_Store
+design-qa.md
