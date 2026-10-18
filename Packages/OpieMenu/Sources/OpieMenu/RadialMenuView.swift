@@ -581,32 +581,99 @@ final class RadialMenuView: NSView {
 
     private func drawLiquidEdges(outer: NSBezierPath, holeRadius: CGFloat, opacity: CGFloat) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
-        NSColor.white.withAlphaComponent(0.11 * opacity).setStroke()
-        outer.lineWidth = 0.8
-        outer.stroke()
+        let inset = liquidInsetContour(by: 2.6)
+        let topLeft = CGPoint(x: center.x - outerRadius, y: center.y + outerRadius)
+        let bottomRight = CGPoint(x: center.x + outerRadius, y: center.y - outerRadius)
+
+        // A glass edge needs thickness: the broad band catches ambient light while
+        // the thin outer lip stays sharp. Both follow the live jelly silhouette.
+        if let bevel = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                  colors: [NSColor.white.withAlphaComponent(0.29 * opacity).cgColor,
+                                           NSColor(calibratedRed: 0.76, green: 0.83, blue: 1,
+                                                   alpha: 0.12 * opacity).cgColor,
+                                           NSColor.white.withAlphaComponent(0.04 * opacity).cgColor,
+                                           NSColor(calibratedWhite: 0.02, alpha: 0.06 * opacity).cgColor] as CFArray,
+                                  locations: [0, 0.36, 0.72, 1]) {
+            context.saveGState()
+            context.addPath(outer.cgPath)
+            context.addPath(inset.cgPath)
+            context.clip(using: .evenOdd)
+            context.drawLinearGradient(bevel, start: topLeft, end: bottomRight, options: [])
+            context.restoreGState()
+        }
+
+        let outerLip = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                  colors: [NSColor.white.withAlphaComponent(0.50 * opacity).cgColor,
+                                           NSColor(calibratedRed: 0.75, green: 0.81, blue: 1,
+                                                   alpha: 0.17 * opacity).cgColor,
+                                           NSColor.white.withAlphaComponent(0.05 * opacity).cgColor] as CFArray,
+                                  locations: [0, 0.48, 1])
+        if let outerLip {
+            context.saveGState()
+            context.addPath(outer.cgPath)
+            context.setLineWidth(0.75)
+            context.replacePathWithStrokedPath()
+            context.clip()
+            context.drawLinearGradient(outerLip, start: topLeft, end: bottomRight, options: [])
+            context.restoreGState()
+        }
+
         let inner = NSBezierPath(ovalIn: NSRect(x: center.x - holeRadius, y: center.y - holeRadius,
                                                 width: holeRadius * 2, height: holeRadius * 2))
-        NSColor.white.withAlphaComponent(0.14 * opacity).setStroke()
-        inner.lineWidth = 0.8
-        inner.stroke()
+        if let innerLip = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                     colors: [NSColor.white.withAlphaComponent(0.24 * opacity).cgColor,
+                                              NSColor.white.withAlphaComponent(0.07 * opacity).cgColor,
+                                              NSColor(calibratedWhite: 0.02, alpha: 0.13 * opacity).cgColor] as CFArray,
+                                     locations: [0, 0.54, 1]) {
+            context.saveGState()
+            context.addPath(inner.cgPath)
+            context.setLineWidth(1.4)
+            context.replacePathWithStrokedPath()
+            context.clip()
+            context.drawLinearGradient(innerLip, start: topLeft, end: bottomRight, options: [])
+            context.restoreGState()
+        }
+
         guard jellyExtent > 0.25,
-              let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                        colors: [NSColor(calibratedRed: 0.84, green: 0.74, blue: 1,
-                                                         alpha: 0.70 * opacity).cgColor,
-                                                 NSColor(calibratedRed: 0.80, green: 0.65, blue: 0.91,
-                                                         alpha: 0.24 * opacity).cgColor,
-                                                 NSColor.clear.cgColor] as CFArray,
-                                        locations: [0, 0.50, 1]) else { return }
+              let glow = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                    colors: [NSColor(calibratedRed: 0.90, green: 0.83, blue: 1,
+                                                     alpha: 0.40 * opacity).cgColor,
+                                             NSColor(calibratedRed: 0.69, green: 0.58, blue: 0.94,
+                                                     alpha: 0.11 * opacity).cgColor,
+                                             NSColor.clear.cgColor] as CFArray,
+                                    locations: [0, 0.35, 1]) else { return }
         let focus = CGPoint(x: center.x + (outerRadius + jellyExtent) * cos(jellyAngle),
                             y: center.y + (outerRadius + jellyExtent) * sin(jellyAngle))
         context.saveGState()
         context.addPath(outer.cgPath)
-        context.setLineWidth(1.6)
+        context.setLineWidth(4)
         context.replacePathWithStrokedPath()
         context.clip()
-        context.drawRadialGradient(gradient, startCenter: focus, startRadius: 0,
-                                   endCenter: focus, endRadius: 135, options: [])
+        context.drawRadialGradient(glow, startCenter: focus, startRadius: 0,
+                                   endCenter: focus, endRadius: 78, options: [])
         context.restoreGState()
+
+        context.saveGState()
+        context.addPath(outer.cgPath)
+        context.setLineWidth(0.9)
+        context.replacePathWithStrokedPath()
+        context.clip()
+        context.drawRadialGradient(glow, startCenter: focus, startRadius: 0,
+                                   endCenter: focus, endRadius: 92, options: [])
+        context.restoreGState()
+    }
+
+    private func liquidInsetContour(by inset: CGFloat) -> NSBezierPath {
+        let path = NSBezierPath()
+        for step in 0...180 {
+            let angle = 2 * CGFloat.pi * CGFloat(step) / 180
+            let radius = deformedRadius(at: angle) - inset
+            let point = NSPoint(x: center.x + radius * cos(angle),
+                                y: center.y + radius * sin(angle))
+            if step == 0 { path.move(to: point) } else { path.line(to: point) }
+        }
+        path.close()
+        return path
     }
 
     private func segmentPath(_ item: Int, deformed: Bool = false) -> NSBezierPath {
@@ -1069,7 +1136,7 @@ private struct LiquidRingMaterial: View {
     var body: some View {
         Color.clear
             .frame(width: size.width, height: size.height)
-            .glassEffect(.regular.tint(.black.opacity(0.30)), in: LiquidRingShape(outline: outline))
+            .glassEffect(.regular, in: LiquidRingShape(outline: outline))
             .opacity(opacity)
             .accessibilityHidden(true)
     }
