@@ -14,6 +14,7 @@ final class RadialMenuView: NSView {
         didSet {
             guard style != oldValue else { return }
             cachedRing = nil
+            cachedCenter = nil
             needsDisplay = true
             onShapeChanged?()
         }
@@ -464,11 +465,24 @@ final class RadialMenuView: NSView {
         path.addArc(center: center, radius: hole, startAngle: 0,
                     endAngle: -.pi * 2, clockwise: true)
         path.closeSubpath()
-        var transform = CGAffineTransform(translationX: center.x, y: center.y)
+        var transform = glassPresentationTransform
+        return (path.copy(using: &transform) ?? path, visualOpacity)
+    }
+
+    var centerGlassShape: (path: CGPath, opacity: CGFloat) {
+        let diameter = centerRadius * 2
+        let circle = CGPath(ellipseIn: CGRect(x: center.x - centerRadius,
+                                              y: center.y - centerRadius,
+                                              width: diameter, height: diameter), transform: nil)
+        var transform = glassPresentationTransform
+        return (circle.copy(using: &transform) ?? circle, visualOpacity * centerOpacity)
+    }
+
+    private var glassPresentationTransform: CGAffineTransform {
+        CGAffineTransform(translationX: center.x, y: center.y)
             .rotated(by: visualRotation)
             .scaledBy(x: visualScale * menuMagnification, y: visualScale * menuMagnification)
             .translatedBy(x: -center.x, y: -center.y)
-        return (path.copy(using: &transform) ?? path, visualOpacity)
     }
 
     private func drawDynamicRing() {
@@ -749,16 +763,48 @@ final class RadialMenuView: NSView {
     }
 
     private func drawCenterFace() {
-        let outer = NSBezierPath(ovalIn: NSRect(x: center.x - 55, y: center.y - 55, width: 110, height: 110))
-        NSColor(calibratedWhite: 0.055, alpha: 0.99).setFill()
-        outer.fill()
         let inner = NSBezierPath(ovalIn: NSRect(x: center.x - centerRadius, y: center.y - centerRadius, width: centerRadius * 2, height: centerRadius * 2))
-        NSGradient(starting: NSColor(calibratedWhite: 0.155, alpha: 1), ending: NSColor(calibratedWhite: 0.105, alpha: 1))?.draw(in: inner, angle: 100)
-        NSColor.white.withAlphaComponent(0.22).setStroke()
-        inner.lineWidth = 1
-        inner.stroke()
+        if style == .liquidGlass {
+            // The center disk is native glass behind this transparent text layer.
+            // Keep just a fine directional rim so the background stays visible.
+            if let context = NSGraphicsContext.current?.cgContext,
+               let highlight = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                           colors: [NSColor.white.withAlphaComponent(0.42).cgColor,
+                                                    NSColor.white.withAlphaComponent(0.14).cgColor,
+                                                    NSColor.white.withAlphaComponent(0.04).cgColor] as CFArray,
+                                           locations: [0, 0.5, 1]) {
+                context.saveGState()
+                context.addPath(inner.cgPath)
+                context.setLineWidth(1.2)
+                context.replacePathWithStrokedPath()
+                context.clip()
+                context.drawLinearGradient(highlight,
+                                           start: CGPoint(x: center.x - centerRadius, y: center.y + centerRadius),
+                                           end: CGPoint(x: center.x + centerRadius, y: center.y - centerRadius),
+                                           options: [])
+                context.restoreGState()
+            }
+        } else {
+            let outer = NSBezierPath(ovalIn: NSRect(x: center.x - 55, y: center.y - 55, width: 110, height: 110))
+            NSColor(calibratedWhite: 0.055, alpha: 0.99).setFill()
+            outer.fill()
+            NSGradient(starting: NSColor(calibratedWhite: 0.155, alpha: 1),
+                       ending: NSColor(calibratedWhite: 0.105, alpha: 1))?.draw(in: inner, angle: 100)
+            NSColor.white.withAlphaComponent(0.22).setStroke()
+            inner.lineWidth = 1
+            inner.stroke()
+        }
+        if style == .liquidGlass {
+            NSGraphicsContext.saveGraphicsState()
+            let textShadow = NSShadow()
+            textShadow.shadowColor = NSColor.black.withAlphaComponent(0.82)
+            textShadow.shadowBlurRadius = 3
+            textShadow.shadowOffset = NSSize(width: 0, height: -1)
+            textShadow.set()
+        }
         drawText(centerTitle, at: NSPoint(x: center.x, y: center.y + 5), size: 11, weight: .semibold, color: .white, centered: true)
         drawText("\(items.count) ACTIONS", at: NSPoint(x: center.x, y: center.y - 9), size: 8, weight: .medium, color: NSColor.white.withAlphaComponent(0.53), centered: true, tracking: 0.9)
+        if style == .liquidGlass { NSGraphicsContext.restoreGraphicsState() }
     }
 
     private func drawIconAndLabel(_ item: Int) {
@@ -1128,17 +1174,28 @@ private struct LiquidRingShape: Shape, @unchecked Sendable {
 }
 
 @available(macOS 26.0, *)
-private struct LiquidRingMaterial: View {
-    let outline: CGPath
-    let opacity: CGFloat
+private struct LiquidMenuMaterial: View {
+    let ringOutline: CGPath
+    let centerOutline: CGPath
+    let ringOpacity: CGFloat
+    let centerOpacity: CGFloat
     let size: CGSize
 
     var body: some View {
-        Color.clear
-            .frame(width: size.width, height: size.height)
-            .glassEffect(.regular, in: LiquidRingShape(outline: outline))
-            .opacity(opacity)
-            .accessibilityHidden(true)
+        GlassEffectContainer(spacing: 0) {
+            ZStack {
+                Color.clear
+                    .frame(width: size.width, height: size.height)
+                    .glassEffect(.regular, in: LiquidRingShape(outline: ringOutline))
+                    .opacity(ringOpacity)
+                Color.clear
+                    .frame(width: size.width, height: size.height)
+                    .glassEffect(.clear, in: LiquidRingShape(outline: centerOutline))
+                    .opacity(centerOpacity)
+            }
+        }
+        .frame(width: size.width, height: size.height)
+        .accessibilityHidden(true)
     }
 }
 
@@ -1158,7 +1215,7 @@ final class RadialMenuSurface: NSView {
     }
     var usesNativeGlass: Bool {
         if #available(macOS 26.0, *) {
-            return frostedGlass is NSGlassEffectView && liquidGlass is NSHostingView<LiquidRingMaterial>
+            return frostedGlass is NSGlassEffectView && liquidGlass is NSHostingView<LiquidMenuMaterial>
         }
         return frostedGlass is NSVisualEffectView
     }
@@ -1171,8 +1228,10 @@ final class RadialMenuSurface: NSView {
             effect.tintColor = NSColor(calibratedWhite: 0.07, alpha: 0.42)
             effect.cornerRadius = 0
             frostedGlass = effect
-            liquidGlass = NSHostingView(rootView: LiquidRingMaterial(
-                outline: CGPath(rect: .zero, transform: nil), opacity: 0, size: frame.size))
+            liquidGlass = NSHostingView(rootView: LiquidMenuMaterial(
+                ringOutline: CGPath(rect: .zero, transform: nil),
+                centerOutline: CGPath(rect: .zero, transform: nil),
+                ringOpacity: 0, centerOpacity: 0, size: frame.size))
         } else {
             let effect = NSVisualEffectView(frame: frame)
             effect.material = .hudWindow
@@ -1217,10 +1276,16 @@ final class RadialMenuSurface: NSView {
             frostedGlass.alphaValue = shape.opacity
             CATransaction.commit()
         } else if #available(macOS 26.0, *),
-                  let host = liquidGlass as? NSHostingView<LiquidRingMaterial> {
+                  let host = liquidGlass as? NSHostingView<LiquidMenuMaterial> {
             var flip = CGAffineTransform(translationX: 0, y: bounds.height).scaledBy(x: 1, y: -1)
             let outline = shape.path.copy(using: &flip) ?? shape.path
-            host.rootView = LiquidRingMaterial(outline: outline, opacity: shape.opacity, size: bounds.size)
+            let center = radialMenu.centerGlassShape
+            let centerOutline = center.path.copy(using: &flip) ?? center.path
+            host.rootView = LiquidMenuMaterial(ringOutline: outline,
+                                               centerOutline: centerOutline,
+                                               ringOpacity: shape.opacity,
+                                               centerOpacity: center.opacity,
+                                               size: bounds.size)
         }
     }
 }

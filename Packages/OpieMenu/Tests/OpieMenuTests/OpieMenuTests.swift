@@ -41,6 +41,12 @@ final class OpieMenuTests: XCTestCase {
             let path = view.glassShape.path
             guard !path.contains(CGPoint(x: 310, y: 310), using: .winding),
                   path.contains(CGPoint(x: 310, y: 410), using: .winding) else { return false }
+            if view.style == .liquidGlass {
+                let center = view.centerGlassShape
+                guard center.path.contains(CGPoint(x: 310, y: 310)),
+                      !center.path.contains(CGPoint(x: 362, y: 310)),
+                      center.opacity == 1 else { return false }
+            }
             view.setPointerPreview(NSPoint(x: -500, y: 310))
             for _ in 0..<18 { view.stepJellyPreview(dt: 1.0 / 60.0) }
             let pulled = view.jellySnapshot.extent
